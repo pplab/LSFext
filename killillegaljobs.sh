@@ -4,10 +4,10 @@
 #written by qymeng@ustc.edu.cn
 #modified by hmli@ustc.edu.cn
 
-exit 0
+#exit 0
 LC_ALL=C
 HOSTNAME=`hostname -s`
-LSF_BJOBS_CMD="/opt/lsf/6.0/linux2.6-glibc2.3-amd64/bin/bjobs"
+LSF_BJOBS_CMD=$(find /opt/lsf -name bjobs 2> /dev/null)
 #LOG_D=="/opt/lsf/killlog/`date +%Y-%m-%d`"
 #LOGFILE="$LOG_D/${HOSTNAME}-clean.log"
 ERRORFILE="/opt/lsf/addons/log/${HOSTNAME}-clean.err"
@@ -18,7 +18,8 @@ ERRORFILE="/opt/lsf/addons/log/${HOSTNAME}-clean.err"
 #else
 #	NF=1
 #fi
-MAXLOAD=`bhosts $HOSTNAME| awk '{if($1~"node") print $4*100}'`
+#MAXLOAD=`bhosts $HOSTNAME| awk '{if($1~"node") print $4*100}'`
+MAXLOAD=`bhosts $HOSTNAME|sed 1d|awk '{print $4*100}'`
 #echo $MAXLOAD
 cd /opt/lsf/addons
 if [ ! -x $LSF_BJOBS_CMD ]; then
@@ -35,12 +36,6 @@ do
 	then
 		mkdir -p $LOG_D
 	fi
-	#get all control groups pid
-#	for LINE in $CONTROL_GROUPS
-	for LINE in `cat /opt/lsf/addons/control_groups`
-	do
-		GROUPPID=$GROUPPID" "`ps -G $LINE|sed 1d|awk '{print $1}'`
-	done
 
 	#wait lsf batchd 
 	ps aux | grep "sbatchd" | grep -v grep > /dev/null 2>&1
@@ -61,12 +56,32 @@ do
 		#kill threads over lsf load BEGIN
 		#LSFLOAD=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|sed 1d| awk -v HOSTNAME=$HOSTNAME -f lsfload.awk`
 		#LSFLOAD=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|grep -v FROM_HOST| awk -v HOSTNAME=$HOSTNAME -f lsfload.awk`
-		#LSF_temp=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|grep -v FROM_HOST`
-		LSF_temp=$($LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|awk '{if($1 != "JOBID") print $0 " "}')
+		#LSF_temp=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|grep -v FROM_HOST``
+		#LSF_temp=$($LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|awk '{if($1 != "JOBID") print $0 " "}')
+		LSF_temp=$($LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|sed 1d|awk '{print $0 " "}')
 		#LSFLOAD=`echo -e $LSF_temp | awk -v HOSTNAME=$HOSTNAME 'BEGIN{ LOAD=0 } { split($6,NODES,":"); for(i in NODES) { split(NODES[i],n,"*"); if(n[1] == HOSTNAME) { LOAD++ }else if(n[2] == HOSTNAME){ LOAD+=n[1] } } } END{ print LOAD*101+50 }'`
 		#LSFLOAD=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|awk '{if($1 != "JOBID") print $0 "\n"}' | awk -v HOSTNAME=$HOSTNAME 'BEGIN{ LOAD=0 } { split($6,NODES,":"); for(i in NODES) { split(NODES[i],n,"*"); if(n[1] == HOSTNAME) { LOAD++ }else if(n[2] == HOSTNAME){ LOAD+=n[1] } } } END{ print LOAD*101+50 }'`
 #		LSFLOAD=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|awk '{if($1 != "JOBID") print $0 "\n"}' | awk -v HOSTNAME=$HOSTNAME 'BEGIN{ LOAD=0 } { split($6,NODES,":"); for(i in NODES) { split(NODES[i],n,"*"); if(n[1] == HOSTNAME) { LOAD++ }else if(n[2] == HOSTNAME){ LOAD+=n[1] } } } END{ print LOAD*101+50 }'`
-		LSFLOAD=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|awk -v HOSTNAME=$HOSTNAME 'BEGIN{ LOAD=0 } { if($1 != "JOBID"){split($6,NODES,":"); for(i in NODES) { split(NODES[i],n,"*"); if(n[1] == HOSTNAME) { LOAD++ }else if(n[2] == HOSTNAME){ LOAD+=n[1] } } } } END{ print LOAD*101+50 }'`
+		
+		# get the current user's total load of the jobs on the node
+		LSFLOAD=`$LSF_BJOBS_CMD -w -u $USER -m $HOSTNAME 2>/dev/null|sed 1d| \
+		        awk -v HOSTNAME=$HOSTNAME 'BEGIN{ LOAD=0 } 
+				                            {
+												split($6,NODES,":"); 
+												for(i in NODES) 
+												{ 
+													split(NODES[i],n,"*"); 
+													if(n[1] == HOSTNAME) 
+													{
+														LOAD+=n[2] 
+													}
+													else if(n[2] == HOSTNAME)
+													{
+														LOAD+=n[1] 
+													} 
+												} 
+											} 
+											END{ print LOAD*101+50 }'`
 	#	if [ $NF = 1 ]; then #8 cores nodes
 			if [ $LSFLOAD -gt $MAXLOAD ];then
 				LSFLOAD=$((MAXLOAD * 10))
@@ -77,10 +92,12 @@ do
 	#			LSFLOAD=80000
 	#		fi
 	#	fi
-		LSF_JOBID=${LSF_temp%% *}
+		LSF_JOBID=${LSF_temp%% *}  # ??
+		
+		# get the actually load and all the PIDs of the user
 		PSLOAD=`ps -o "%p %u %C" -U $USER 2>/dev/null|sed 1d| awk 'BEGIN{ LOAD=0 ; PS="" } { LOAD=LOAD+$3; PS=PS" "$1 } END{ print PS": "int(LOAD) }'`
-		PS=${PSLOAD%:*}
-		PSLOAD=${PSLOAD#*:}
+		PS=${PSLOAD%:*}  #??
+		PSLOAD=${PSLOAD#*:}  #??
 		if [ $LSFLOAD -lt $PSLOAD ]; then
 			KILLTIME=`date +%F" "%T`
 			echo "OverLoad: <$KILLTIME> <$USER> <$HOSTNAME>: $PSLOAD(Real_Load*100%) > $LSFLOAD(LSF_Num_Nodes*100+50), killed:" >>$LOGFILE
@@ -106,6 +123,14 @@ do
 	done
 
 	#kill none lsf jobs
+	
+	#get all pids running by users in the control groups
+	for LINE in `cat /opt/lsf/addons/control_groups`
+	do
+		GROUPPID=$GROUPPID" "`ps -G $LINE|sed 1d|awk '{print $1}'`
+	done
+	
+	# check if the running processes all are in the jobs list
 	for PLINE in $GROUPPID
 	do
 		if ps -o "%u %U" -p $PLINE|sed 1d|egrep "root|hmli|lsfadmin" >/dev/null 2>&1; then
