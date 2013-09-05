@@ -1,8 +1,8 @@
-#outline#
+outline
+---
+1. collect submitted jobs on current node
 
-1. collect running processes
-
-2. collect submitted jobs
+2. collect running processes on current node
 
 3. compare and find abnormal jobs
 
