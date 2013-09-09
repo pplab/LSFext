@@ -2,8 +2,10 @@ CONTROLGROUPS=~/lsf_addon/control_groups
 LSF_BIN=$(dirname $(find  /opt/lsf/ -name bjobs 2>/dev/null))
 LOG_DIR=~/lsf_addon/log
 [ -e $LOG_DIR ] || mkdir $LOG_DIR
-cd $LOG_DIR
-rm *
+WORK_DIR=~/lsf_addon/work
+[ -e $WORK_DIR ] || mkdir $WORK_DIR
+cd $WORK_DIR
+[ -e "*" ] || rm -rf *
 
 DIE(){
 	echo "$1"
@@ -11,12 +13,12 @@ DIE(){
 }
 
 # check nodes loads and jobs
-$LSF_BIN/lsload -w -I r15m|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$3}' > nodes_load 	# collect the actual load
+$LSF_BIN/lsload -w -I r15s|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$3}' > nodes_load 	# collect the actual load
 $LSF_BIN/bhosts|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$4,$5,$6}' > nodes_jobs		# collect the number of maximum jobs, allocated jobs, and running jobs
 paste nodes_jobs nodes_load |awk '$1!=$5{printf "ERROR! the hostname of nodes_jobs and nodes_load mismatch in line "NR": ";print $0;next}int($6)>$3{print}' > warning_nodes   	# get the nodes where the actual load is larger than the number of running jobs.
 
 # if something wrong, do not continue
-[ -z $(grep ERROR warning_nodes) ] || DIE "something error when running script, please check log file: $LOG_DIR/warning_nodes"
+[ -z $(grep ERROR warning_nodes) ] || DIE "something error when running script, please check log file: $WORK_DIR/warning_nodes"
 
 # if nothing error, exit
 [ $(wc -l < warning_nodes) -eq 0 ] && DIE "no illegal jobs now"
@@ -55,8 +57,10 @@ do
         
         if [ $FOUND -eq 0 ]  # the process is not started by LSF
         then
-            [ -e illegal_jobs.$iNode ] || echo '%CPU USER       PID  PPID COMMAND' > illegal_jobs.$iNode
-            ssh $iNode ps o pcpu,user,pid,ppid,comm --pid $iPid |sed 1d >> illegal_jobs.$iNode
+            #[ -e $LOG_DIR/illegal_jobs.$iNode ] || echo '%CPU USER       PID  PPID COMMAND' > $LOG_DIR/illegal_jobs.$iNode
+            [ -e $LOG_DIR/illegal_jobs.$iNode ] || echo 'TIME :                             %CPU USER       PID  PPID COMMAND' > $LOG_DIR/illegal_jobs.$iNode
+            printf "`date` : " >> $LOG_DIR/illegal_jobs.$iNode
+            ssh $iNode ps o pcpu,user,pid,ppid,comm --pid $iPid |sed 1d >> $LOG_DIR/illegal_jobs.$iNode
             #ssh $iNode kill -9 $iPid  #kill the illegal job
         fi
     done
