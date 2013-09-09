@@ -46,8 +46,11 @@ do
         while [ $PPid -lt 0 ] # search the ppid of the processes until 0
         do			
             comm=$(ssh $iNode ps o comm --pid $PPid 2>/dev/null |sed 1d)
-            [ $comm = "sbatchd" ] && (FOUND=1; break)  # find the LSF process
-            PPid=$(ssh $iNode ps o ppid --pid $PPid 2>/dev/null | sed 1d)  # continue to find the parent process of current process
+			
+            # Add other LSF processes if they are existed  
+			[ $comm = "sbatchd" ] && (FOUND=1; break)  # find the LSF process   
+            
+			PPid=$(ssh $iNode ps o ppid --pid $PPid 2>/dev/null | sed 1d)  # continue to find the parent process of current process
         done
         
         if [ $FOUND -eq 0 ]  # the process is not started by LSF
