@@ -55,7 +55,7 @@ $LSF_BIN/lsload -w -I r15s|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node
 $LSF_BIN/bhosts|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$4,$5,$6}' > $WORK_DIR/nodes_jobs      # collect the number of maximum jobs, allocated jobs, and running jobs
 paste $WORK_DIR/nodes_jobs $WORK_DIR/nodes_load |awk -v s=$SENSITIVITY '\
                              $1!=$5{printf "ERROR! the hostname of nodes_jobs and nodes_load mismatch in line "NR": ";print $0;next}
-                             $6>$3*(2-s) {print $0;}' > $WORK_DIR/warning_nodes       # get the nodes where the actual load is larger than the number of running jobs.
+                             $6/(2-s)>$3 {print $0;}' > $WORK_DIR/warning_nodes       # get the nodes where the actual load is larger than the number of running jobs.
 
 # if something wrong, do not continue
 [ -z $(grep ERROR $WORK_DIR/warning_nodes) ] || DIE "something error when running script, please check log file: $WORK_DIR/warning_nodes"
