@@ -74,11 +74,11 @@ do
     # collect all running processes of control_group
     for iGroup in $(cat $CONTROLGROUPS)
     do 
-        ssh $iNode ps -F -G $iGroup 2>/dev/null|sed 1d >> #WORK_DIR/PROC.$iNode 
+        ssh $iNode ps -F -G $iGroup 2>/dev/null|sed 1d >> $WORK_DIR/PROC.$iNode 
     done
 
     # check these processes
-    Pid=$(cat #WORK_DIR/PROC.$iNode |awk '$4>20{print $2}')  
+    Pid=$(cat $WORK_DIR/PROC.$iNode |awk '$4>20{print $2}')  
     for iPid in $Pid
     do
 
