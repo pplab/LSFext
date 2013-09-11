@@ -34,9 +34,10 @@ paste nodes_jobs nodes_load |awk -v s=$SENSITIVITY '\
 [ $(wc -l < warning_nodes) -eq 0 ] && DIE "no illegal jobs now"
 
 # wait 30 second in case of the lag of the job manager's information
-sleep 1
+# sleep 30
 
 # check wanging_nodes again
+echo 'TIME                           HOST    %CPU USER     PID   PPID  COMMAND'; 
 for iNode in $(cat warning_nodes|awk '{print $1}')
 do
 	[ -e PROC.$iNode ] && rm PROC.$iNode
@@ -65,8 +66,7 @@ do
         
         if [ $FOUND -eq 0 ]  # the process is not started by LSF
         then
-            echo 'TIME :                         Node   %CPU USER       PID  PPID COMMAND'
-            printf "`date` : $iNode   "
+            printf "`date`   $iNode   "
             ssh $iNode ps o pcpu,user,pid,ppid,comm --pid $iPid |sed 1d
             #ssh $iNode kill -9 $iPid  #kill the illegal job
         fi
