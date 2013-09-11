@@ -45,6 +45,7 @@ mkdir $WORK_DIR
 
 DIE(){
     echo "$1"
+    rm -rf $WORK_DIR
     exit 1
 }
 
@@ -113,4 +114,4 @@ do
     done
 done
 
-[ -e $WORK_DIR ] && rm -rf $WORKDIR
+[ -e $WORK_DIR ] && rm -rf $WORK_DIR
