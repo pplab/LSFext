@@ -8,8 +8,8 @@ CONTROLGROUPS=~/lsf_addon/control_groups
 # 1: the actually system load can only below the number of running jobs
 # default: 0.9
 # NOTE: Most of the time, 0.8~0.9 is a good choice. Do not use 1 unless you are aware of what you're doing.
-LSF_BIN=$(echo $PATH|sed 's/\:/\n/g'|grep lsf|grep bin$)
-[ -z LSF_BIN ] && LSF_BIN=$(dirname $(find  /opt/lsf/ -name bjobs 2>/dev/null))
+LSF_BIN=$(echo $PATH|sed 's/\:/\n/g'|grep lsf|grep bin$|head -n 1)
+[ -z LSF_BIN ] && LSF_BIN=$(dirname $(find  /opt/lsf/ -name bjobs 2>/dev/null|head -n 1))
 WORK_DIR=/tmp/checkjobs.$$
 [ -e $WORK_DIR ] && rm -rf $WORKDIR
 mkdir $WORK_DIR
