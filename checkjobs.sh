@@ -54,31 +54,31 @@ $LSF_BIN/lsload -w -I r15s|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node
 $LSF_BIN/bhosts|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$4,$5,$6}' > $WORK_DIR/nodes_jobs      # collect the number of maximum jobs, allocated jobs, and running jobs
 paste $WORK_DIR/nodes_jobs $WORK_DIR/nodes_load |awk -v s=$SENSITIVITY '\
                              $1!=$5{printf "ERROR! the hostname of nodes_jobs and nodes_load mismatch in line "NR": ";print $0;next}
-                             $6>$3*(2-s) {print $0;}' > warning_nodes       # get the nodes where the actual load is larger than the number of running jobs.
+                             $6>$3*(2-s) {print $0;}' > $WORK_DIR/warning_nodes       # get the nodes where the actual load is larger than the number of running jobs.
 
 # if something wrong, do not continue
-[ -z $(grep ERROR warning_nodes) ] || DIE "something error when running script, please check log file: $WORK_DIR/warning_nodes"
+[ -z $(grep ERROR $WORK_DIR/warning_nodes) ] || DIE "something error when running script, please check log file: $WORK_DIR/warning_nodes"
 
 # if nothing error, exit
-[ $(wc -l < warning_nodes) -eq 0 ] && DIE "no illegal jobs now"
+[ $(wc -l < $WORK_DIR/warning_nodes) -eq 0 ] && DIE "no illegal jobs now"
 
 # wait 30 second in case of the lag of the job manager's information
 # sleep 30
 
 # check wanging_nodes again
 echo 'TIME                           HOST    %CPU USER     PID   PPID  COMMAND'; 
-for iNode in $(cat warning_nodes|awk '{print $1}')
+for iNode in $(cat $WORK_DIR/warning_nodes|awk '{print $1}')
 do
-    [ -e PROC.$iNode ] && rm PROC.$iNode
+    [ -e $WORK_DIR/PROC.$iNode ] && rm $WORK_DIR/PROC.$iNode
 
     # collect all running processes of control_group
     for iGroup in $(cat $CONTROLGROUPS)
     do 
-        ssh $iNode ps -F -G $iGroup 2>/dev/null|sed 1d >> PROC.$iNode 
+        ssh $iNode ps -F -G $iGroup 2>/dev/null|sed 1d >> #WORK_DIR/PROC.$iNode 
     done
 
     # check these processes
-    Pid=$(cat PROC.$iNode |awk '$4>20{print $2}')  
+    Pid=$(cat #WORK_DIR/PROC.$iNode |awk '$4>20{print $2}')  
     for iPid in $Pid
     do
 
