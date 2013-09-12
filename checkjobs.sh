@@ -72,10 +72,13 @@ echo 'TIME                           HOST    %CPU USER     PID   PPID  COMMAND';
 for iNode in $(cat $WORK_DIR/warning_nodes|awk '{print $1}')
 do
     # check every user's load and jobs on the iNode
+    ssh $iNode ps -A -o group,user,pcpu|sed 1d|grep -v ^root > $WORK_DIR/GroupPid.$iNode
     (for iGroup in $(cat control_groups); 
     do 
-        ssh $iNode ps -F -G $iGroup 2>/dev/null |sed 1d;
-    done)|awk '{load[$1]+=$4/100.0}END{for (user in load) print user,load[user];}' > $WORK_DIR/user_load.$iNode
+        grep ^$iGroup $WORK_DIR/GroupPid.$iNode
+    done)|awk '{load[$2]+=$3/100.0}END{for (user in load) print user,load[user];}' > $WORK_DIR/user_load.$iNode
+        #ssh $iNode ps -F -G $iGroup 2>/dev/null |sed 1d;
+    #done)|awk '{load[$1]+=$4/100.0}END{for (user in load) print user,load[user];}' > $WORK_DIR/user_load.$iNode
 
     [ -e $WORK_DIR/warning_user.$iNode ] && rm $WORK_DIR/warning_nodes.$iNode
     (for iUser in $(cat $WORK_DIR/user_load.$iNode|awk '{print $1}'); 
