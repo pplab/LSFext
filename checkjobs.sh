@@ -60,14 +60,15 @@ paste $WORK_DIR/nodes_jobs $WORK_DIR/nodes_load |awk -v s=$SENSITIVITY '\
 # if something wrong, do not continue
 [ -z $(grep ERROR $WORK_DIR/warning_nodes) ] || DIE "something error when running script, please check log file: $WORK_DIR/warning_nodes"
 
-# if nothing error, exit
-[ $(wc -l < $WORK_DIR/warning_nodes) -eq 0 ] && DIE "no illegal jobs now"
-
 # wait 30 second in case of the lag of the job manager's information
 # sleep 30
 
 # check wanging_nodes again
 echo 'TIME                           HOST    %CPU USER     PID   PPID  COMMAND'; 
+
+# if nothing error, exit
+[ $(wc -l < $WORK_DIR/warning_nodes) -eq 0 ] && DIE
+
 for iNode in $(cat $WORK_DIR/warning_nodes|awk '{print $1}')
 do
     [ -e $WORK_DIR/PROC.$iNode ] && rm $WORK_DIR/PROC.$iNode
@@ -82,27 +83,27 @@ do
     Pid=$(cat $WORK_DIR/PROC.$iNode |awk '$4>20{print $2}')  
     for iPid in $Pid
     do
-
+        FOUND=0
         PPid=$(ssh $iNode ps o ppid --pid $iPid 2>/dev/null | sed 1d) 
         [ -z $PPid ] && break   # the process has already die 
 
         while [ $PPid -gt 0 ] # search the ppid of the processes until 0
         do          
-            comm=$(ssh $iNode ps o comm --pid $PPid 2>/dev/null |sed 1d)
+            COMM_PPid=$(ssh $iNode ps o comm,ppid --pid $PPid 2>/dev/null |sed 1d)
             
-            # Add other LSF processes if they are existed  
-            FOUND=$(echo "$comm" |awk '{
+            # Check the process's name
+            PPid=$(echo "$COMM_PPid" |awk '{
                                     MATCH=0
                                     if($1=="sbatchd") MATCH=1;
                                     if($1~/^[0-9]+\.[0-9]+$/) MATCH=1;
                                     
                                     # add other LSF process patterns here
-
-                                    print MATCH;
+                                    if(MATCH == 1)
+                                        print -1;
+                                    else 
+                                        print $2;
                                   }')
-            [ $FOUND -eq 1 ] && break
-            
-            PPid=$(ssh $iNode ps o ppid --pid $PPid 2>/dev/null | sed 1d)  # continue to find the parent process of current process
+            [ $PPid -eq -1 ] && (FOUND=1;break)
         done
         
         if [ $FOUND -eq 0 ]  # the process is not started by LSF
