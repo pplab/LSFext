@@ -3,6 +3,7 @@
 # and report the processes which are not started by job manager
 usage() {
     echo "  checkjobs.sh:  check jobs and processes running on the system               "
+    echo "          NOTE:  only check the compute nodes whose hostname start with node  "
     echo "                                                                              "
     echo "  usage: checkjobs.sh -G <control groups>                                     "
     echo "                      -s <sensitivity>                                        "
@@ -43,52 +44,97 @@ WORK_DIR=/tmp/checkjobs.$$
 mkdir $WORK_DIR
 
 DIE(){
-	echo "$1"
-	exit 1
+    echo "$1"
+    rm -rf $WORK_DIR
+    exit 1
 }
 
 # check nodes loads and jobs
-$LSF_BIN/lsload -w -I r15s|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$3}' > $WORK_DIR/nodes_load 	# collect the actual load
-$LSF_BIN/bhosts|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$4,$5,$6}' > $WORK_DIR/nodes_jobs		# collect the number of maximum jobs, allocated jobs, and running jobs
+$LSF_BIN/lsload -w -I r15s|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,0$3}' > $WORK_DIR/nodes_load     # collect the actual load
+# the 0 before $3 is useful when $3 is an empty string instead of a number
+$LSF_BIN/bhosts|grep ^node|sed 's/node//'|sort -k1g|awk '{print "node"$1,$4,$5,$6}' > $WORK_DIR/nodes_jobs      # collect the number of maximum jobs, allocated jobs, and running jobs
 paste $WORK_DIR/nodes_jobs $WORK_DIR/nodes_load |awk -v s=$SENSITIVITY '\
                              $1!=$5{printf "ERROR! the hostname of nodes_jobs and nodes_load mismatch in line "NR": ";print $0;next}
-                             $6>$3*(2-s) {print $0;}' > warning_nodes   	# get the nodes where the actual load is larger than the number of running jobs.
+                             $6/(2-s)>$3 {print $0;}' > $WORK_DIR/warning_nodes       # get the nodes where the actual load is larger than the number of running jobs.
 
 # if something wrong, do not continue
-[ -z $(grep ERROR warning_nodes) ] || DIE "something error when running script, please check log file: $WORK_DIR/warning_nodes"
-
-# if nothing error, exit
-[ $(wc -l < warning_nodes) -eq 0 ] && DIE "no illegal jobs now"
+[ -z $(grep ERROR $WORK_DIR/warning_nodes) ] || DIE "something error when running script, please check log file: $WORK_DIR/warning_nodes"
 
 # wait 30 second in case of the lag of the job manager's information
 # sleep 30
 
-# check wanging_nodes again
+# check warning_nodes again
 echo 'TIME                           HOST    %CPU USER     PID   PPID  COMMAND'; 
-for iNode in $(cat warning_nodes|awk '{print $1}')
+
+# if nothing warning, exit
+[ $(wc -l < $WORK_DIR/warning_nodes) -eq 0 ] && DIE
+
+for iNode in $(cat $WORK_DIR/warning_nodes|awk '{print $1}')
 do
-	[ -e PROC.$iNode ] && rm PROC.$iNode
+    # check every user's load and jobs on the iNode
+    ssh $iNode ps -A -o group,user,pcpu|sed 1d|grep -v ^root > $WORK_DIR/GroupPid.$iNode
+    (for iGroup in $(cat control_groups); 
+    do 
+        grep ^$iGroup $WORK_DIR/GroupPid.$iNode
+    done)|awk '{load[$2]+=$3/100.0}END{for (user in load) print user,load[user];}' > $WORK_DIR/user_load.$iNode
+        #ssh $iNode ps -F -G $iGroup 2>/dev/null |sed 1d;
+    #done)|awk '{load[$1]+=$4/100.0}END{for (user in load) print user,load[user];}' > $WORK_DIR/user_load.$iNode
+
+    [ -e $WORK_DIR/warning_user.$iNode ] && rm $WORK_DIR/warning_nodes.$iNode
+    (for iUser in $(cat $WORK_DIR/user_load.$iNode|awk '{print $1}'); 
+    do
+        nJob=$($LSF_BIN/bjobs -u $iUser -m $iNode -w 2>/dev/null|sed 1d| \
+                awk '{print $6}'|sed 's/:/\n/g'|\
+                awk -v n=$iNode -F'*' 'BEGIN{load=0} 
+                              {
+                                if(NF==1 && $1==n) 
+                                    load+=1; 
+                                else if($2==n) 
+                                    load+=$1; 
+                                else 
+                                    load+=$2;
+                              } 
+                              END{print load;}' )
+        [ -z $nJob ] && nJob=0
+        printf "$(cat $WORK_DIR/user_load.$iNode|grep $iUser) "
+        echo " $nJob"
+    done) > $WORK_DIR/user_load_job.$iNode
+    cat $WORK_DIR/user_load_job.$iNode| awk '$2/(2-$SENSITIVITY)>$3{print $1}' >>$WORK_DIR/warning_user.$iNode # compare the number of jobs and the user load
+
+    # if nothing warning, exit
+    [ $(wc -l < $WORK_DIR/warning_user.$iNode) -eq 0 ] && DIE
 
     # collect all running processes of control_group
-	for iGroup in $(cat $CONTROLGROUPS)
-	do 
-		ssh $iNode ps -F -G $iGroup 2>/dev/null|sed 1d >> PROC.$iNode 
+    [ -e $WORK_DIR/PROC.$iNode ] && rm $WORK_DIR/PROC.$iNode
+    for iUser in $(cat $WORK_DIR/warning_user.$iNode)
+    do 
+        ssh $iNode ps -F -U $iUser 2>/dev/null|sed 1d >> $WORK_DIR/PROC.$iNode 
     done
 
-    # check these processes
-    Pid=$(cat PROC.$iNode |awk '$4>50{print $2}')  
+    Pid=$(cat $WORK_DIR/PROC.$iNode |awk '$4>20{print $2}')  # check the processes which load>20%
     for iPid in $Pid
     do
         FOUND=0
         PPid=$(ssh $iNode ps o ppid --pid $iPid 2>/dev/null | sed 1d) 
-        while [ $PPid -lt 0 ] # search the ppid of the processes until 0
-        do			
-            comm=$(ssh $iNode ps o comm --pid $PPid 2>/dev/null |sed 1d)
-			
-            # Add other LSF processes if they are existed  
-			[ $comm = "sbatchd" ] && (FOUND=1; break)  # find the LSF process   
+        [ -z $PPid ] && break   # the process has already die 
+
+        while [ $PPid -gt 0 ] # search the ppid of the processes until 0
+        do          
+            COMM_PPid=$(ssh $iNode ps o comm,ppid --pid $PPid 2>/dev/null |sed 1d)
             
-			PPid=$(ssh $iNode ps o ppid --pid $PPid 2>/dev/null | sed 1d)  # continue to find the parent process of current process
+            # Check the process's name
+            PPid=$(echo "$COMM_PPid" |awk '{
+                                    MATCH=0
+                                    if($1=="sbatchd") MATCH=1;
+                                    if($1~/^[0-9]+\.[0-9]+$/) MATCH=1;
+                                    
+                                    # add other LSF process patterns here
+                                    if(MATCH == 1)
+                                        print -1;
+                                    else 
+                                        print $2;
+                                  }')
+            [ $PPid -eq -1 ] && (FOUND=1;break)
         done
         
         if [ $FOUND -eq 0 ]  # the process is not started by LSF
@@ -100,4 +146,4 @@ do
     done
 done
 
-[ -e $WORK_DIR ] && rm -rf $WORKDIR
+[ -e $WORK_DIR ] && rm -rf $WORK_DIR
