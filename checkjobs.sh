@@ -75,14 +75,23 @@ do
     (for iGroup in $(cat control_groups); 
     do 
         ssh $iNode ps -F -G $iGroup 2>/dev/null |sed 1d;
-    done)|awk '{CPU[$1]+=$4}END{for (user in CPU) print user,CPU[user]/100.0;}' > $WORK_DIR/user_load.$iNode
+    done)|awk '{load[$1]+=$4/100.0}END{for (user in load) print user,load[user];}' > $WORK_DIR/user_load.$iNode
 
     [ -e $WORK_DIR/warning_user.$iNode ] && rm $WORK_DIR/warning_nodes.$iNode
     (for iUser in $(cat $WORK_DIR/user_load.$iNode|awk '{print $1}'); 
     do
         nJob=$($LSF_BIN/bjobs -u $iUser -m $iNode -w 2>/dev/null|sed 1d| \
-               awk '{print $6}'|sed 's/:/\n/g'|\
-               awk -v n=$iNode -F'*' 'BEGIN{load=0} {if($2==n) load+=$1; else load+=$2;} END{print load;}' )
+                awk '{print $6}'|sed 's/:/\n/g'|\
+                awk -v n=$iNode -F'*' 'BEGIN{load=0} 
+                              {
+                                if(NF==1 && $1==n) 
+                                    load+=1; 
+                                else if($2==n) 
+                                    load+=$1; 
+                                else 
+                                    load+=$2;
+                              } 
+                              END{print load;}' )
         [ -z $nJob ] && nJob=0
         printf "$(cat $WORK_DIR/user_load.$iNode|grep $iUser) "
         echo " $nJob"
