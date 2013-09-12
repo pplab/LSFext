@@ -63,24 +63,43 @@ paste $WORK_DIR/nodes_jobs $WORK_DIR/nodes_load |awk -v s=$SENSITIVITY '\
 # wait 30 second in case of the lag of the job manager's information
 # sleep 30
 
-# check wanging_nodes again
+# check warning_nodes again
 echo 'TIME                           HOST    %CPU USER     PID   PPID  COMMAND'; 
 
-# if nothing error, exit
+# if nothing warning, exit
 [ $(wc -l < $WORK_DIR/warning_nodes) -eq 0 ] && DIE
 
 for iNode in $(cat $WORK_DIR/warning_nodes|awk '{print $1}')
 do
-    [ -e $WORK_DIR/PROC.$iNode ] && rm $WORK_DIR/PROC.$iNode
+    # check every user's load and jobs on the iNode
+    (for iGroup in $(cat control_groups); 
+    do 
+        ssh $iNode ps -F -G $iGroup 2>/dev/null |sed 1d;
+    done)|awk '{CPU[$1]+=$4}END{for (user in CPU) print user,CPU[user]/100.0;}' > $WORK_DIR/user_load.$iNode
+
+    [ -e $WORK_DIR/warning_user.$iNode ] && rm $WORK_DIR/warning_nodes.$iNode
+    (for iUser in $(cat $WORK_DIR/user_load.$iNode|awk '{print $1}'); 
+    do
+        nJob=$($LSF_BIN/bjobs -u $iUser -m $iNode -w 2>/dev/null|sed 1d| \
+               awk '{print $6}'|sed 's/:/\n/g'|\
+               awk -v n=$iNode -F'*' 'BEGIN{load=0} {if($2==n) load+=$1; else load+=$2;} END{print load;}' )
+        [ -z $nJob ] && nJob=0
+        printf "$(cat $WORK_DIR/user_load.$iNode|grep $iUser) "
+        echo " $nJob"
+    done) > $WORK_DIR/user_load_job.$iNode
+    cat $WORK_DIR/user_load_job.$iNode| awk '$2/(2-$SENSITIVITY)>$3{print $1}' >>$WORK_DIR/warning_user.$iNode # compare the number of jobs and the user load
+
+    # if nothing warning, exit
+    [ $(wc -l < $WORK_DIR/warning_user.$iNode) -eq 0 ] && DIE
 
     # collect all running processes of control_group
-    for iGroup in $(cat $CONTROLGROUPS)
+    [ -e $WORK_DIR/PROC.$iNode ] && rm $WORK_DIR/PROC.$iNode
+    for iUser in $(cat $WORK_DIR/warning_user.$iNode)
     do 
-        ssh $iNode ps -F -G $iGroup 2>/dev/null|sed 1d >> $WORK_DIR/PROC.$iNode 
+        ssh $iNode ps -F -U $iUser 2>/dev/null|sed 1d >> $WORK_DIR/PROC.$iNode 
     done
 
-    # check these processes
-    Pid=$(cat $WORK_DIR/PROC.$iNode |awk '$4>20{print $2}')  
+    Pid=$(cat $WORK_DIR/PROC.$iNode |awk '$4>20{print $2}')  # check the processes which load>20%
     for iPid in $Pid
     do
         FOUND=0
