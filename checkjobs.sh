@@ -38,7 +38,7 @@ done
 [ -z $SENSITIVITY ] && SENSITIVITY=0.9  
 
 LSF_BIN=$(echo $PATH|sed 's/\:/\n/g'|grep lsf|grep bin$|head -n 1)
-[ -z LSF_BIN ] && LSF_BIN=$(dirname $(find  /opt/lsf/ -name bjobs 2>/dev/null|head -n 1))
+[ -z $LSF_BIN ] && LSF_BIN=$(dirname $(find  /opt/lsf/ -name bjobs 2>/dev/null|head -n 1))
 WORK_DIR=/tmp/checkjobs.$$
 [ -e $WORK_DIR ] && rm -rf $WORKDIR
 mkdir $WORK_DIR
