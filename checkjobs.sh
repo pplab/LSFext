@@ -73,7 +73,7 @@ for iNode in $(cat $WORK_DIR/warning_nodes|awk '{print $1}')
 do
     # check every user's load and jobs on the iNode
     ssh $iNode ps -A -o group,user,pcpu|sed 1d|grep -v ^root > $WORK_DIR/GroupPid.$iNode
-    (for iGroup in $(cat control_groups); 
+    (for iGroup in $(cat $CONTROLGROUPS); 
     do 
         grep ^$iGroup $WORK_DIR/GroupPid.$iNode
     done)|awk '{load[$2]+=$3/100.0}END{for (user in load) print user,load[user];}' > $WORK_DIR/user_load.$iNode
