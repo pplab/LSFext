@@ -44,7 +44,7 @@ WORK_DIR=/tmp/checkjobs.$$
 mkdir $WORK_DIR
 
 DIE(){
-    echo "$1"
+    [ -z "$1" ] || echo "$1"
     rm -rf $WORK_DIR
     exit 1
 }
